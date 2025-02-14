@@ -1,0 +1,34 @@
+# Pcap file path.
+trace: /home/docker/datasets/kitsune/os-scan/os-scan.pcap
+# Trace labels path.
+labels: /home/docker/datasets/kitsune/os-scan/os-scan-labels.csv
+# Current trace attack name.
+attack: os-scan
+# Execution phase sampling rate.
+sampl: 1024
+# Sample the training phase?
+train_sampl: 0
+# Execution phase: packet number offset from which to start the sampling.
+exec_sampl_offset: 0
+# FM grace period.
+fm_grace: 100000
+# AD grace period.
+ad_grace: 900000
+# KitNET: m value.
+max_ae: 10
+# Ratio of exact stats in the overall training phase.
+train_exact_ratio: 0
+# Calculate exact stats in the exec phase.
+exact_stats: 0
+# Keep track of the global stats and save them to a csv.
+save_stats_global: 1
+# Save the spatial model.
+save_spatial: 0
+# Previously trained FM model path.
+fm_model: plugins/KitNET/models/os-scan-m-10-r-0-fm.txt
+# Previously trained EL model path.
+el_model: plugins/KitNET/models/os-scan-m-10-r-0-el.txt
+# Previously trained OL model path.
+ol_model: plugins/KitNET/models/os-scan-m-10-r-0-ol.txt
+# Previously trained stats struct path.
+train_stats: plugins/KitNET/models/os-scan-m-10-r-0-train-stats.txt
