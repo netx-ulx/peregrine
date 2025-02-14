@@ -1,0 +1,38 @@
+from scapy.all import Packet, IntField, ShortField, ByteField, LongField
+
+
+class PeregrineHdr(Packet):
+    name = 'peregrine'
+    fields_desc = [IntField('decay', 0),
+                   IntField('mac_ip_src_pkt_cnt', 0),
+                   IntField('mac_ip_src_pkt_len', 0),
+                   IntField('mac_ip_src_ss', 0),
+                   IntField('mac_ip_src_mean', 0),
+                   IntField('mac_ip_src_std_dev', 0),
+                   IntField('ip_src_pkt_cnt', 0),
+                   IntField('ip_src_pkt_len', 0),
+                   IntField('ip_src_ss', 0),
+                   IntField('ip_src_mean', 0),
+                   IntField('ip_src_std_dev', 0),
+                   IntField('ip_pkt_cnt', 0),
+                   IntField('ip_ss_0', 0),
+                   IntField('ip_ss_1', 0),
+                   IntField('ip_mean_0', 0),
+                   IntField('ip_pkt_cnt_1', 0),
+                   IntField('ip_mean_1', 0),
+                   IntField('ip_std_dev_0', 0),
+                   IntField('ip_magnitude', 0),
+                   IntField('ip_radius', 0),
+                   IntField('five_t_pkt_cnt', 0),
+                   IntField('five_t_ss_0', 0),
+                   IntField('five_t_ss_1', 0),
+                   IntField('five_t_mean_0', 0),
+                   IntField('five_t_pkt_cnt_1', 0),
+                   IntField('five_t_mean_1', 0),
+                   IntField('five_t_std_dev_0', 0),
+                   IntField('five_t_magnitude', 0),
+                   IntField('five_t_radius', 0),
+                   LongField('ip_sum_res_prod_cov', 0),
+                   LongField('ip_pcc', 0),
+                   LongField('five_t_sum_res_prod_cov', 0),
+                   LongField('five_t_pcc', 0)]

@@ -1,0 +1,44 @@
+{
+    "ports": [
+        {
+            "port": 5,
+            "capacity": 100,
+            "comment": "e291427x1300275 E810"
+        },
+        {
+            "port": 6,
+            "capacity": 100,
+            "comment": "e291427x1300275 E810"
+        },
+        {
+            "port": 10,
+            "capacity": 100,
+            "comment": "e291427x1300274 E810"
+        },
+        {
+            "port": 11,
+            "capacity": 100,
+            "comment": "e291427x1300274 E810"
+        },
+        {
+            "port": 29,
+            "capacity": 100,
+            "comment": "Tofino 0"
+        },
+        {
+            "port": 30,
+            "capacity": 100,
+            "comment": "Tofino 0"
+        },
+        {
+            "port": 31,
+            "capacity": 100,
+            "comment": "Tofino 0"
+        },
+        {
+            "port": 32,
+            "capacity": 100,
+            "comment": "Tofino 0"
+        }
+    ]
+}
