@@ -29,13 +29,14 @@ from scipy.special import expit
 
 
 class DAParams:
-    def __init__(self, n_visible=5, n_hidden=3, lr=0.001, corruption_level=0.0, grace_period=10000, hidden_ratio=None):
+    def __init__(self, n_visible=5, n_hidden=3, lr=0.001, corruption_level=0.0, grace_period=10000, hidden_ratio=None, normalization=True):
         self.n_visible = n_visible  # num of units in visible (input) layer
         self.n_hidden = n_hidden  # num of units in hidden layer
         self.lr = lr
         self.corruption_level = corruption_level
         self.gracePeriod = grace_period
         self.hiddenRatio = hidden_ratio
+        self.normalization = normalization
 
 
 class DA:
@@ -47,6 +48,7 @@ class DA:
 
         # for 0-1 normalization
         self.norm_max = numpy.ones((self.params.n_visible,)) * -numpy.inf
+        print(self.norm_max)
         self.norm_min = numpy.ones((self.params.n_visible,)) * numpy.inf
         self.n = 0
 
@@ -84,8 +86,8 @@ class DA:
         self.norm_min[x < self.norm_min] = x[x < self.norm_min]
 
         # 0-1 normalize
-        x = (x - self.norm_min) / (self.norm_max - self.norm_min + 0.0000000000000001)
-
+        if self.params.normalization:
+            x = (x - self.norm_min) / (self.norm_max - self.norm_min + 0.0000000000000001)
         if self.params.corruption_level > 0.0:
             tilde_x = self.get_corrupted_input(x, self.params.corruption_level)
         else:
@@ -115,7 +117,8 @@ class DA:
             return 0.0
         else:
             # 0-1 normalize
-            x = (x - self.norm_min) / (self.norm_max - self.norm_min + 0.0000000000000001)
+            if self.params.normalization:
+                x = (x - self.norm_min) / (self.norm_max - self.norm_min + 0.0000000000000001)
             z = self.reconstruct(x)
             rmse = numpy.sqrt(((x - z) ** 2).mean())  # MSE
             return rmse

@@ -20,8 +20,7 @@ class KitNET:
     # feature map instead of learning one. The map must be a list, where the i-th entry contains a list of the
     # feature indices to be assigned to the i-th autoencoder in the ensemble. For example, [[2,5,3],[4,0,1],[6,7]]
     def __init__(self, n, max_autoencoder_size=10, fm_grace_period=None, ad_grace_period=10000,
-                 learning_rate=0.1, hidden_ratio=0.75, feature_map=None, ensemble_layer=None,
-                 output_layer=None, attack='', train_exact_ratio=0):
+                 only_ol=False, learning_rate=0.1, hidden_ratio=0.75, feature_map=None, ensemble_layer=None, output_layer=None, attack='', train_exact_ratio=0):
         # Parameters:
         self.AD_grace_period = ad_grace_period
         if fm_grace_period is None:
@@ -35,6 +34,8 @@ class KitNET:
         self.lr = learning_rate
         self.hr = hidden_ratio
         self.n = n
+
+        self.only_ol = only_ol
 
         # Variables
         self.n_trained = 0  # the number of training instances so far
@@ -97,11 +98,19 @@ class KitNET:
             return 0.0
         else:  # train
             # Ensemble Layer
-            S_l1 = np.zeros(len(self.ensembleLayer))
-            for a in range(len(self.ensembleLayer)):
-                # make sub instance for autoencoder 'a'
-                xi = x[self.v[a]]
-                S_l1[a] = self.ensembleLayer[a].train(xi)
+            if not self.only_ol:
+                S_l1 = np.zeros(len(self.ensembleLayer))
+                for a in range(len(self.ensembleLayer)):
+                    # make sub instance for autoencoder 'a'
+                    xi = x[self.v[a]]
+                    S_l1[a] = self.ensembleLayer[a].train(xi)
+            else:
+                S_l1 = np.zeros(len(self.v), dtype=object)
+                for a in range(len(self.v)):
+                    if len(self.v) == 1:
+                        S_l1 = x[self.v[a]]
+                    else:
+                        S_l1[a] = x[self.v[a]]
             # OutputLayer
             output = self.outputLayer.train(S_l1)
             if self.n_trained == self.AD_grace_period + self.FM_grace_period - 1:
@@ -114,9 +123,10 @@ class KitNET:
                 with open(outdir + '/' + self.attack + '-m-' + str(self.m)
                           + '-r-' + str(self.train_exact_ratio) + '-fm' + '.txt', 'wb') as f_fm:
                     pickle.dump(self.v, f_fm)
-                with open(outdir + '/' + self.attack + '-m-' + str(self.m)
-                          + '-r-' + str(self.train_exact_ratio) + '-el' + '.txt', 'wb') as f_el:
-                    pickle.dump(self.ensembleLayer, f_el)
+                if not self.only_ol:
+                    with open(outdir + '/' + self.attack + '-m-' + str(self.m)
+                            + '-r-' + str(self.train_exact_ratio) + '-el' + '.txt', 'wb') as f_el:
+                        pickle.dump(self.ensembleLayer, f_el)
                 with open(outdir + '/' + self.attack + '-m-' + str(self.m)
                           + '-r-' + str(self.train_exact_ratio) + '-ol' + '.txt', 'wb') as f_ol:
                     pickle.dump(self.outputLayer, f_ol)
@@ -132,24 +142,37 @@ class KitNET:
         else:
             self.n_executed += 1
             # Ensemble Layer
-            S_l1 = np.zeros(len(self.ensembleLayer))
-            for a in range(len(self.ensembleLayer)):
-                # make sub inst
-                xi = x[self.v[a]]
-                S_l1[a] = self.ensembleLayer[a].execute(xi)
+            if not self.only_ol:
+                S_l1 = np.zeros(len(self.ensembleLayer))
+                for a in range(len(self.ensembleLayer)):
+                    # make sub inst
+                    xi = x[self.v[a]]
+                    S_l1[a] = self.ensembleLayer[a].execute(xi)
+            else:
+                S_l1 = np.zeros(len(self.v), dtype=object)
+                for a in range(len(self.v)):
+                    if len(self.v) == 1:
+                        S_l1 = x[self.v[a]]
+                    else:
+                        S_l1[a] = x[self.v[a]]
             # OutputLayer
             return self.outputLayer.execute(S_l1)
 
     def __createAD__(self):
         # construct ensemble layer
-        for ad_map in self.v:
-            params = DAParams(n_visible=len(ad_map), n_hidden=0, lr=self.lr, corruption_level=0,
-                              grace_period=0, hidden_ratio=self.hr)
-            self.ensembleLayer.append(DA(params))
+        if not self.only_ol:
+            for ad_map in self.v:
+                params = DAParams(n_visible=len(ad_map), n_hidden=0, lr=self.lr, corruption_level=0,
+                                grace_period=0, hidden_ratio=self.hr)
+                self.ensembleLayer.append(DA(params))
+            params = DAParams(len(self.v), n_hidden=0, lr=self.lr, corruption_level=0,
+                            grace_period=0, hidden_ratio=self.hr)
 
         # construct output layer
-        params = DAParams(len(self.v), n_hidden=0, lr=self.lr, corruption_level=0,
-                          grace_period=0, hidden_ratio=self.hr)
+        else:
+            params = DAParams(self.m, n_hidden=0, lr=self.lr, corruption_level=0,
+                            grace_period=0, hidden_ratio=self.hr, normalization=False)
+        # construct output layer
         self.outputLayer = DA(params)
 
 # Copyright (c) 2017 Yisroel Mirsky

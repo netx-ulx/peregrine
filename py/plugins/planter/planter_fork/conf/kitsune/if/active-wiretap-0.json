@@ -1,0 +1,112 @@
+{
+    "directory config": {
+        "data": "datasets/kitsune/active-wiretap/active-wiretap.csv",
+        "labels": "datasets/kitsune/active-wiretap/active-wiretap-labels.csv",
+        "work": "planter"
+    },
+    "model config": {
+        "model": "if",
+        "model size": "0",
+        "number of trees": 3,
+        "number of samples": 128,
+        "number of classes": 2,
+        "test table": "y"
+    },
+    "data config": {
+        "dataset": "kitsune",
+        "cur_trace": "active-wiretap",
+        "number of features": 5,
+        "testing mode": "n"
+    },
+    "timer log": {
+        "load data": {
+            "start": 1750891568.440878
+        }
+    },
+    "p4 config": {
+        "model": "if",
+        "number of features": 5,
+        "number of classes": 2,
+        "number of trees": 5,
+        "table name": "test-if-test-lpm_table.json",
+        "decision table size": 44617,
+        "code table size": [
+            12672,
+            11960,
+            70448,
+            6534,
+            2184
+        ],
+        "default vote": 0,
+        "default label": 1,
+        "width of feature": [
+            17,
+            17,
+            6,
+            9,
+            9
+        ],
+        "width of code": [
+            [
+                3.0,
+                5.0,
+                3.0,
+                5.0,
+                5.0
+            ],
+            [
+                5.0,
+                5.0,
+                2.0,
+                4.0,
+                5.0
+            ],
+            [
+                5.0,
+                5.0,
+                2.0,
+                5.0,
+                6.0
+            ],
+            [
+                5.0,
+                5.0,
+                2.0,
+                5.0,
+                4.0
+            ],
+            [
+                5.0,
+                4.0,
+                2.0,
+                2.0,
+                5.0
+            ]
+        ],
+        "used columns": [
+            237,
+            223,
+            6,
+            54,
+            64
+        ],
+        "width of probability": 7,
+        "width of result": 8,
+        "standard headers": [
+            "ethernet",
+            "Planter",
+            "arp",
+            "ipv4",
+            "tcp",
+            "udp",
+            "vlan_tag"
+        ]
+    },
+    "test config": {
+        "type of test": "classification"
+    },
+    "target config": {
+        "architecture": "tna",
+        "use case": "anomaly_detection"
+    }
+}

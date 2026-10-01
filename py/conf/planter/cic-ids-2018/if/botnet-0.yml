@@ -1,0 +1,19 @@
+# Pcap file path.
+trace: /home/docker/datasets/cic-ids-2018/botnet/botnet.pcap
+# Trace labels path.
+labels: /home/docker/datasets/cic-ids-2018/botnet/botnet-labels.csv
+# Planter config path.
+planter_conf: /home/docker/peregrine/py/plugins/planter/planter_fork/conf/cic-ids-2018/if/botnet-0-peregrine.json
+planter_base_dir: /home/docker/peregrine/py/plugins/planter/planter_fork/
+# Current trace dataset.
+dataset: cic-ids-2018
+# Current trace attack name.
+attack: botnet
+# Current trace attack name.
+switch_model: False
+# Training phase period.
+train_size: 1000000
+# PCA.
+pca: False
+# PCA feats path.
+# pca_feats:

@@ -1,0 +1,45 @@
+{
+	"stream_cp": {
+		"trace": "/foo/bar.csv",
+		"attack": "bar",
+		"dataset": "foo",
+		"dp_sim": true,
+		"hv_dataset": true,
+		"epoch_cntr": 100000000,
+		"sampl_rate": 1,
+		"flow_timeout": 5.0
+	},
+	"edge_construct": {
+		"length_bin_size": 10,
+		"edge_long_line": 15,
+		"edge_agg_line": 20
+	},
+	"graph_analyze": {
+		"attacker_dst4": ["25.204.126.222"],
+		"select_ratio": 0.01,
+		"offset_l": 5.0,
+		"offset_s": 0.0,
+
+		"al": 0.1,
+		"bl": 1.7,
+		"cl": 0.5,
+
+		"as": 0.1,
+		"bs": 1.7,
+		"cs": 0.5,
+
+		"uc": 0.004,
+		"vc": 40,
+
+		"us": 0.004,
+		"vs": 40,
+
+		"ul": 0.004,
+		"vl": 40
+	},
+	"result_save": {
+		"save_result_enable": true,
+		"save_result_name": "bar",
+		"save_result_path": "eval/data/hypervision/foo/bar"
+	}
+}

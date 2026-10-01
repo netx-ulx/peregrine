@@ -1,3 +1,3 @@
 #!/bin/bash
 
-python3 controller.py -p kitnet -c config/kitnet.yml
+# python3 peregrine.py -p kitnet -c conf/kitnet/kitsune/active-wiretap-1.yml

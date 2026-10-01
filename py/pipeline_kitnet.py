@@ -4,65 +4,81 @@ import pickle
 import itertools
 import numpy as np
 import pandas as pd
+from datetime import datetime
 from pathlib import Path
 from fc_kitnet import FCKitNET
 from plugins.KitNET.KitNET import KitNET
 
 LAMBDAS = 4
-LEARNING_RATE = 0.1
-HIDDEN_RATIO = 0.75
 
 
 class PipelineKitNET:
     def __init__(
             self, trace, labels, sampl, train_sampl, exec_sampl_offset, fm_grace, ad_grace,
-            max_ae, fm_model, el_model, ol_model, train_stats, attack, train_exact_ratio,
-            exact_stats, save_stats_global, save_spatial, time_start):
+            max_ae, learning_rate, hidden_ratio, num_features, five_t, only_ol, fm_model, el_model,
+            ol_model, train_stats, dataset, attack, train_exact_ratio, exact_stats,
+            save_stats_global, save_spatial, time_start):
 
         self.decay_to_pos = {
             0: 0, 1: 0, 2: 1, 3: 2, 4: 3,
             8192: 1, 16384: 2, 24576: 3}
 
-        self.fm_grace = fm_grace
-        self.ad_grace = ad_grace
-        self.train_grace = self.fm_grace + self.ad_grace
+        self.fm_grace       = fm_grace
+        self.ad_grace       = ad_grace
+        self.train_grace    = self.fm_grace + self.ad_grace
 
-        self.attack = attack
-        self.m = max_ae
+        self.dataset        = dataset
+        self.attack         = attack
+        self.m              = max_ae
+        self.learning_rate  = learning_rate
+        self.hidden_ratio   = hidden_ratio
+        self.num_features   = num_features
+        self.five_t         = five_t
+        self.only_ol        = only_ol
 
         # Exec phase sampling rate.
-        self.sampl = sampl
+        self.sampl              = sampl
         # Sample the FC phase.
-        self.train_sampl = train_sampl
+        self.train_sampl        = train_sampl
         # Exec phase: packet number offset from which to start the sampling.
-        self.exec_sampl_offset = exec_sampl_offset
+        self.exec_sampl_offset  = exec_sampl_offset
         # Ratio of exact stats in the overall training phase.
-        self.train_exact_ratio = train_exact_ratio
+        self.train_exact_ratio  = train_exact_ratio
         # Calculate exact stats in the exec phase.
-        self.exact_stats = exact_stats
+        self.exact_stats        = exact_stats
         # Keep track of the global stats and save them to a csv.
-        self.save_stats_global = save_stats_global
+        self.save_stats_global  = save_stats_global
         # Save the model for spatial.
-        self.save_spatial = save_spatial
+        self.save_spatial       = save_spatial
 
-        self.attack_init_ts = 0
-        self.attack_pkt_num_cntr = 0
-        self.attack_pkt_num_cntr_dp = 0
-        self.det_init_time = -1
-        self.det_init_pkt_num = -1
-        self.det_init_pkt_num_dp = -1
+        self.attack_init_ts             = 0
+        self.attack_pkt_num_cntr        = 0
+        self.attack_pkt_num_cntr_dp     = 0
+        self.det_init_time              = -1
+        self.det_init_pkt_num           = -1
+        self.det_init_pkt_num_dp        = -1
 
-        self.stats_global = []
-        self.rmse_list = []
+        self.stats_global   = []
+        self.rmse_list      = []
         self.peregrine_eval = []
 
-        self.threshold = 0
+        self.threshold      = 0
         self.pkt_cnt_global = 0
-        self.train_skip_pkt = 0
-        self.train_skip = False
+        self.train_skip     = False
+        self.exec_phase     = False
+
+        self.pkt_cnt_train  = 0
+        self.pkt_cnt_exec   = 0
+        self.pkt_cnt_label  = 0
+        self.pkt_skip       = 0
 
         # Read the csv containing the ground truth labels.
-        self.trace_labels = pd.read_csv(labels, header=None)
+        if self.dataset == 'hypervision':
+            self.trace_labels = pd.read_csv(labels)
+            self.trace_labels = self.trace_labels[self.trace_labels.ip_type == 4]
+            self.trace_labels = self.trace_labels.loc[:, ['label']]
+        else:
+            self.trace_labels = pd.read_csv(labels, header=None)
 
         if fm_model is not None \
                 and os.path.isfile(f'{Path(__file__).parents[0]}/{fm_model}') \
@@ -74,37 +90,36 @@ class PipelineKitNET:
                 and os.path.isfile(f'{Path(__file__).parents[0]}/{train_stats}'):
             self.train_skip = True
 
-        self.stats_mac_ip_src = {}
-        self.stats_ip_src = {}
-        self.stats_ip = {}
-        self.stats_five_t = {}
+        self.stats_mac_ip_src   = {}
+        self.stats_ip_src       = {}
+        self.stats_ip           = {}
+        self.stats_five_t       = {}
 
         # If train_skip is true, import the previously generated models.
         if self.train_skip:
             with open(train_stats, 'rb') as f_stats:
-                stats = pickle.load(f_stats)
-                self.stats_mac_ip_src = stats[0]
-                self.stats_ip_src = stats[1]
-                self.stats_ip = stats[2]
-                self.stats_five_t = stats[3]
+                stats                   = pickle.load(f_stats)
+                self.stats_mac_ip_src   = stats[0]
+                self.stats_ip_src       = stats[1]
+                self.stats_ip           = stats[2]
+                self.stats_five_t       = stats[3]
 
         # Initialize KitNET.
         if self.train_sampl:
             self.kitnet = KitNET(
-                80, max_ae, fm_grace // self.sampl, ad_grace // self.sampl,
-                LEARNING_RATE, HIDDEN_RATIO, fm_model, el_model, ol_model, attack,
+                num_features, max_ae, fm_grace // self.sampl, ad_grace // self.sampl, self.only_ol,
+                self.learning_rate, self.hidden_ratio, fm_model, el_model, ol_model, attack,
                 train_exact_ratio)
         else:
             self.kitnet = KitNET(
-                80, max_ae, fm_grace, ad_grace, LEARNING_RATE, HIDDEN_RATIO, fm_model, el_model,
-                ol_model, attack, train_exact_ratio)
+                num_features, max_ae, fm_grace, ad_grace, self.only_ol, self.learning_rate,
+                self.hidden_ratio, fm_model, el_model, ol_model, attack, train_exact_ratio)
 
         # Initialize feature extraction/computation.
         self.fc = FCKitNET(trace, sampl, self.train_grace, exec_sampl_offset, self.train_skip,
-                           train_stats)
+                           train_stats, self.five_t, dataset)
 
         self.trace_size = self.fc.trace_size()
-        self.trace_initial_ts = self.fc.trace_initial_ts()
 
     def process(self):
         # Offset value, corresponds to 0 during the training phase and
@@ -122,152 +137,208 @@ class PipelineKitNET:
             cur_stats = 0
 
             time_new = time.time()
-            if not self.train_skip:
-                if (len(self.rmse_list) + self.train_skip_pkt) % 1000 == 0 and \
-                        (len(self.rmse_list) + self.train_skip_pkt) < self.train_grace:
-                    print(f'Processed pkts: {len(self.rmse_list) + self.train_skip_pkt}. '
-                          f'Elapsed time: {time_new - time_old} '
-                          f'({int(1000/(time_new - time_old))} pps)')
-                    time_old = time_new
-                elif self.pkt_cnt_global % 1000 == 0 and \
-                        (len(self.rmse_list) + self.train_skip_pkt) >= self.train_grace:
-                    print(f'Processed pkts: {self.train_grace + self.pkt_cnt_global}. '
-                          f'Elapsed time: {time_new - time_old} '
-                          f'({int(1000/(time_new - time_old))} pps)')
-                    time_old = time_new
-            else:
-                if self.pkt_cnt_global % 1000 == 0:
-                    print(f'Processed pkts: {self.train_grace + self.pkt_cnt_global}. '
-                          f'Elapsed time: {time_new - time_old} '
-                          f'({int(1000/(time_new - time_old))} pps)')
-                    time_old = time_new
+            if (self.pkt_cnt_train + self.pkt_cnt_exec + self.pkt_skip) % 10000 == 0:
+                print(f'Processed pkts: {self.pkt_cnt_train + self.pkt_cnt_exec + self.pkt_skip}. '
+                        f'Elapsed time: {time_new - time_old} '
+                        f'({int(10000/(time_new - time_old))} pps)')
+                time_old = time_new
 
-            if self.save_stats_global:
+            if self.save_stats_global and not self.five_t:
                 self.update_stats_global()
 
-            # Training phase.
-            if (len(self.rmse_list) + self.train_skip_pkt) \
-                    < (self.train_exact_ratio * (self.train_grace)) \
-                    and not self.train_skip:
-                self.fc.feature_extract()
-                if self.train_sampl \
-                        and (len(self.rmse_list) +1 + self.train_skip_pkt) % self.sampl != 0:
-                    self.train_skip_pkt += 1
-                    continue
-                cur_stats = self.fc.process_exact('training')
-            elif (len(self.rmse_list) + self.train_skip_pkt) \
-                    < self.train_grace and not self.train_skip:
-                self.fc.feature_extract()
-                if self.train_sampl \
-                        and (len(self.rmse_list) +1 + self.train_skip_pkt) % self.sampl != 0:
-                    self.train_skip_pkt += 1
-                    continue
-                if self.exact_stats:
-                    cur_stats = self.fc.process_exact('training')
-                else:
-                    cur_stats = self.fc.process('training')
+            # ----------------------------------------
+            # Training phase
+            # ----------------------------------------
 
-            # Execution phase.
+            if not self.exec_phase:
+                if self.train_skip:
+                    self.pkt_cnt_train  = self.train_grace
+                    self.exec_phase     = True
+                    print('Starting execution phase...')
+                    continue
+
+                elif self.train_exact_ratio != 0:
+                    self.pkt_cnt_label += 1
+
+                    if self.dataset == 'hypervision':
+                        self.fc.feature_extract_hv()
+                    else:
+                        self.fc.feature_extract()
+
+                    if self.pkt_cnt_train < self.train_exec_ratio * self.train_grace:
+                        cur_stats = self.fc.process_exact('training')
+
+                    else:
+                        cur_stats = self.fc.process('training')
+
+                elif self.pkt_cnt_train < self.train_grace:
+                        self.pkt_cnt_label += 1
+
+                        if self.dataset == 'hypervision':
+                            self.fc.feature_extract_hv()
+                        else:
+                            self.fc.feature_extract()
+
+                        cur_stats = self.fc.process('training')
+
+                if self.train_sampl \
+                        and (self.pkt_cnt_train + 1) % self.sampl != 0:
+                    self.pkt_cnt_train += 1
+                    continue
+
+                # If any statistics were obtained, send them to the ML pipeline.
+                if cur_stats != 0:
+                    # If the packet is not IPv4.
+                    if cur_stats == -1:
+                        self.pkt_skip += 1
+                        continue
+
+                    self.pkt_cnt_train += 1
+
+                    if not self.five_t:
+                        # Flatten the statistics' list of lists.
+                        cur_stats = list(itertools.chain(*cur_stats))
+
+                        # Update the stored global stats with the latest packet stats.
+                        input_stats = self.update_stats(cur_stats)
+
+                        if self.save_stats_global:
+                            self.stats_global.append(input_stats)
+                    else:
+                        input_stats = np.array(cur_stats[2:])
+
+                    # Call function with the content of kitsune's main (before the eval/csv part).
+                    rmse = self.kitnet.process(input_stats)
+
+                    self.rmse_list.append(rmse)
+
+                    if self.pkt_cnt_train + self.pkt_skip < self.train_grace and int(self.trace_labels.iat[self.pkt_cnt_train + self.pkt_skip - 1, 0]) == 1:
+                        print('Error: attack traces appearing during the training phase')
+                        print(f'      pkt_cnt_train: {self.pkt_cnt_train}')
+                        print(f'      pkt_skip:      {self.pkt_skip}')
+                        print(f'      train_grace:   {self.train_grace}')
+                        break
+
+                    try:
+                        # 1-5: pkt headers
+                        # time_pkt_ml: processing time (ML classifier only)
+                        self.peregrine_eval.append([
+                            cur_stats[1], cur_stats[2], cur_stats[3],
+                            cur_stats[4], cur_stats[5], cur_stats[6],
+                            rmse,
+                            self.trace_labels.iat[self.pkt_cnt_train + self.pkt_skip - 1, 0]])
+                    except IndexError:
+                        print(f'trace labels len: {self.trace_labels.shape[0]}')
+
+                    # At the end of the training phase, store the highest rmse value as the threshold.
+                    # Also, save the stored stat values.
+                    if self.pkt_cnt_train == self.train_grace and not self.exec_phase:
+                        print(self.pkt_cnt_train)
+                        print(self.pkt_skip)
+                        print(self.pkt_cnt_label)
+                        offset = self.exec_sampl_offset
+                        self.threshold = max(self.rmse_list, key=float)
+                        self.save_train_stats()
+                        self.exec_phase = True
+                        print('Starting execution phase...')
+
+            # ----------------------------------------
+            # Execution phase
+            # ----------------------------------------
+
             else:
-                self.pkt_cnt_global += 1
-                if self.train_grace + self.pkt_cnt_global + self.exec_sampl_offset > self.trace_size:
-                    if self.save_stats_global:
+                self.pkt_cnt_label  += 1
+
+                if self.pkt_cnt_label + self.exec_sampl_offset > self.trace_size:
+                    if self.save_stats_global and not self.five_t:
                         self.update_stats_global()
                     break
-                self.fc.feature_extract()
-                if self.attack_pkt_num_cntr_dp != -1 and int(self.trace_labels.iat[
-                        self.train_grace + offset + self.pkt_cnt_global - 1, 0]) == 1:
-                    self.attack_pkt_num_cntr_dp += 1
+
+                if self.dataset == 'hypervision':
+                    self.fc.feature_extract_hv()
+                else:
+                    self.fc.feature_extract()
+
                 if self.exact_stats:
                     cur_stats = self.fc.process_exact('execution')
                 else:
                     cur_stats = self.fc.process('execution')
 
-            # If any statistics were obtained, send them to the ML pipeline.
-            # Execution phase: only proceed according to the sampling rate.
-            if cur_stats != 0:
-                # If the packet is not IPv4.
-                if cur_stats == -1:
-                    self.train_skip_pkt += 1
+                if (self.pkt_cnt_label - self.train_grace) % self.sampl != 0:
+                    self.pkt_cnt_exec   += 1
                     continue
 
-                # Break when we reach the end of the trace file.
-                if self.train_grace + self.pkt_cnt_global + self.exec_sampl_offset \
-                        > self.trace_size:
-                    if self.save_stats_global:
-                        self.update_stats_global()
+                if self.attack_pkt_num_cntr_dp != -1 and int(self.trace_labels.iat[
+                        self.pkt_cnt_label+ self.exec_sampl_offset - 1, 0]) == 1:
+                    self.attack_pkt_num_cntr_dp += 1
+
+                # If any statistics were obtained, send them to the ML pipeline.
+                # Execution phase: only proceed according to the sampling rate.
+                if cur_stats != 0:
+                    # If the packet is not IPv4.
+                    if cur_stats == -1:
+                        self.pkt_skip += 1
+                        continue
+
+                    self.pkt_cnt_exec   += 1
+
+                    if not self.five_t:
+                        # Flatten the statistics' list of lists.
+                        cur_stats = list(itertools.chain(*cur_stats))
+
+                        # Update the stored global stats with the latest packet stats.
+                        input_stats = self.update_stats(cur_stats)
+
+                        if self.save_stats_global:
+                            self.stats_global.append(input_stats)
+                    else:
+                        input_stats = np.array(cur_stats[2:])
+
+                    # Call function with the content of kitsune's main (before the eval/csv part).
+                    rmse = self.kitnet.process(input_stats)
+
+                    self.rmse_list.append(rmse)
+
+                    if self.attack_init_ts == 0 and int(self.trace_labels.iat[
+                            self.pkt_cnt_label + offset - 1, 0]) == 1:
+                        print('Trace attack: start')
+                        self.attack_init_ts         = cur_stats[0]
+                        self.attack_pkt_num_cntr   += 1
+
+                    if float(rmse) > float(self.threshold) \
+                            and self.attack_pkt_num_cntr != -1 \
+                            and int(self.trace_labels.iat[
+                                self.pkt_cnt_label + offset - 1, 0]) == 1:
+                        self.det_init_time          = cur_stats[0] - self.attack_init_ts
+                        self.det_init_pkt_num       = self.attack_pkt_num_cntr
+                        self.det_init_pkt_num_dp    = self.attack_pkt_num_cntr_dp
+                        self.attack_pkt_num_cntr    = -1
+                        self.attack_pkt_num_cntr_dp = -1
+
+                    if self.attack_pkt_num_cntr != -1 and int(self.trace_labels.iat[
+                            self.pkt_cnt_label + offset - 1, 0]) == 1:
+                        self.attack_pkt_num_cntr += 1
+
+                    try:
+                        # 1-5: pkt headers
+                        # time_pkt_ml: processing time (ML classifier only)
+                        self.peregrine_eval.append([
+                            cur_stats[1], cur_stats[2], cur_stats[3],
+                            cur_stats[4], cur_stats[5], cur_stats[6],
+                            rmse, self.trace_labels.iat[
+                                self.pkt_cnt_label + offset - 1, 0]])
+                    except IndexError:
+                        print(f'trace labels len: {self.trace_labels.shape[0]}')
+                        print(f'pkt cnt label:    {self.pkt_cnt_label}')
+
+                    # Break when we reach the end of the trace file.
+                    if self.pkt_cnt_label + self.exec_sampl_offset >= self.trace_size:
+                        if self.save_stats_global and not self.five_t:
+                            self.update_stats_global()
+                        break
+                else:
+                    print("TIMEOUT.")
                     break
-                if self.pkt_cnt_global % self.sampl != 0:
-                    continue
-
-                # Flatten the statistics' list of lists.
-                cur_stats = list(itertools.chain(*cur_stats))
-
-                # Update the stored global stats with the latest packet stats.
-                input_stats = self.update_stats(cur_stats)
-
-                if self.save_stats_global:
-                    self.stats_global.append(input_stats)
-
-                # Call function with the content of kitsune's main (before the eval/csv part).
-                rmse = self.kitnet.process(input_stats)
-
-                self.rmse_list.append(rmse)
-
-                if len(self.rmse_list) < self.train_grace and int(self.trace_labels.iat[
-                        len(self.rmse_list) + self.train_skip_pkt - 1, 0]) == 1:
-                    print('Error: attack traces appearing during the training phase')
-                    break
-
-                if self.attack_init_ts == 0 and int(self.trace_labels.iat[
-                        self.train_grace + offset + self.pkt_cnt_global - 1, 0]) == 1:
-                    print('Trace attack: start')
-                    self.attack_init_ts = cur_stats[0]
-                    self.attack_pkt_num_cntr += 1
-
-                if int(rmse) > int(self.threshold) \
-                        and self.attack_pkt_num_cntr != -1 \
-                        and int(self.trace_labels.iat[
-                            self.train_grace + offset + self.pkt_cnt_global - 1, 0]) == 1:
-                    self.det_init_time = cur_stats[0] - self.attack_init_ts
-                    self.det_init_pkt_num = self.attack_pkt_num_cntr
-                    self.det_init_pkt_num_dp = self.attack_pkt_num_cntr_dp
-                    self.attack_pkt_num_cntr = -1
-                    self.attack_pkt_num_cntr_dp = -1
-
-                if self.attack_pkt_num_cntr != -1 and int(self.trace_labels.iat[
-                        self.train_grace + offset + self.pkt_cnt_global - 1, 0]) == 1:
-                    self.attack_pkt_num_cntr += 1
-
-                try:
-                    # 1-5: pkt headers
-                    # time_pkt_ml: processing time (ML classifier only)
-                    self.peregrine_eval.append([
-                        cur_stats[1], cur_stats[2], cur_stats[3], cur_stats[4], cur_stats[5],
-                        cur_stats[6], rmse, self.trace_labels.iat[
-                            self.train_grace + offset + self.pkt_cnt_global - 1, 0]])
-                except IndexError:
-                    print(self.trace_labels.shape[0])
-                    print(self.pkt_cnt_global)
-                    print(self.train_grace + offset + self.pkt_cnt_global - 1)
-
-                # At the end of the training phase, store the highest rmse value as the threshold.
-                # Also, save the stored stat values.
-                if not self.train_skip \
-                        and (len(self.rmse_list) + self.train_skip_pkt) == self.train_grace:
-                    offset = self.exec_sampl_offset
-                    self.threshold = max(self.rmse_list, key=float)
-                    self.save_train_stats()
-                    print('Starting execution phase...')
-                # Break when we reach the end of the trace file.
-                elif self.train_grace + self.pkt_cnt_global \
-                        + self.exec_sampl_offset >= self.trace_size:
-                    if self.save_stats_global:
-                        self.update_stats_global()
-                    break
-            else:
-                print('TIMEOUT.')
-                break
 
     def update_stats(self, cur_stats):
         cur_decay_pos = self.decay_to_pos[cur_stats[7]]
@@ -335,6 +406,11 @@ class PipelineKitNET:
                   + '.txt', 'wb') as f_stats:
             pickle.dump(train_stats, f_stats)
 
+        with open(outdir + '/' + self.attack + '-m-' + str(self.m)
+                  + '-r-' + str(self.train_exact_ratio) + '-threshold'
+                  + '.txt', 'w') as f:
+            f.write(str(self.threshold))
+
         if self.save_spatial:
             outdir_params = f'{Path(__file__).parents[0]}/plugins/KitNET/models/spatial/{self.attack}'\
                             f'-m-{self.m}-r-{self.train_exact_ratio}/params'
@@ -383,8 +459,8 @@ class PipelineKitNET:
                 f'{outdir_maps}/N_LAYERS.csv', header=False, index=False)
 
     def update_stats_global(self):
-        outdir = f'{Path(__file__).parents[0]}/eval/kitnet'
-        if not os.path.exists(f'{Path(__file__).parents[0]}/eval/kitnet'):
+        outdir = f'{Path(__file__).parents[0]}/eval/kitnet/{self.dataset}'
+        if not os.path.exists(f'{Path(__file__).parents[0]}/eval/kitnet/{self.dataset}'):
             os.makedirs(outdir, exist_ok=True)
         outpath_stats_global = os.path.join(
             outdir, f'{self.attack}-{self.sampl}-stats.csv')

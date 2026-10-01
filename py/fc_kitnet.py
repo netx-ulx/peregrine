@@ -1,3 +1,5 @@
+from math import isnan, sqrt, pow, log
+from math_unit import MathUnit
 import os
 import subprocess
 import pandas as pd
@@ -6,8 +8,7 @@ import socket
 import struct
 import pickle
 import crcmod
-from math import isnan, sqrt, pow, log
-from math_unit import MathUnit
+import ipaddress
 
 sqr = MathUnit(shift=1, invert=False, scale=-6,
                lookup=[x*x for x in range(15, -1, -1)])
@@ -19,13 +20,16 @@ sqrt_mu = MathUnit(shift=-1, invert=False, scale=-7,
 
 
 class FCKitNET:
-    def __init__(self, file_path, sampling_rate, train_pkts, offset, train_skip, train_stats):
-        self.file_path = file_path              # Path of the trace file / csv.
-        self.df_csv = None                      # Dataframe for the trace csv.
-        self.cur_pkt = pd.DataFrame()           # Stats of the packet being processed.
-        self.sampling_rate = sampling_rate      # Sampling rate during the execution phase.
-        self.exec_phase_offset = offset         # offset from which to start the sampling.
-        self.train_pkts = train_pkts            # Number of packets in the training phase.
+    def __init__(self, file_path, sampling_rate, train_pkts, offset,
+                 train_skip, train_stats, five_t, dataset):
+        self.file_path          = file_path         # Path of the trace file / csv.
+        self.df_csv             = None              # Dataframe for the trace csv.
+        self.cur_pkt            = pd.DataFrame()    # Stats of the packet being processed.
+        self.sampling_rate      = sampling_rate     # Sampling rate during the execution phase.
+        self.exec_phase_offset  = offset            # offset from which to start the sampling.
+        self.train_pkts         = train_pkts        # Number of packets in the training phase.
+        self.five_t             = five_t
+        self.dataset            = dataset
 
         if train_skip:
             self.global_pkt_index = train_pkts
@@ -87,15 +91,19 @@ class FCKitNET:
         file_path = self.file_path.split('.')[0]
 
         if not os.path.isfile(file_path + '.csv'):
-            self.parse_pcap(self.file_path)
+            if not self.dataset == 'hypervision':
+                self.parse_pcap(self.file_path)
+            else:
+                print('Error parsing csv. Exiting.')
+                exit()
 
         self.df_csv = pd.read_csv(file_path + '.csv')
 
+        if self.dataset == 'hypervision':
+               self.df_csv = self.df_csv[self.df_csv.ip_type == 4]
+
     def trace_size(self):
         return len(self.df_csv)
-
-    def trace_initial_ts(self):
-        return float(self.df_csv.iat[0, 0])
 
     def parse_pcap(self, pcap_path):
         fields = "-e frame.time_epoch -e frame.len -e eth.src -e eth.dst \
@@ -159,10 +167,61 @@ class FCKitNET:
         self.cur_pkt = [pkt_len, timestamp, mac_dst, mac_src, ip_src, ip_dst,
                         str(int(ip_proto)), str(int(port_src)), str(int(port_dst))]
 
+    def feature_extract_hv(self):
+        # Parse the next packet from the csv.
+        if self.global_pkt_index == self.train_pkts:
+            self.decay_cntr = 1
+            self.phase_pkt_index = 0
+            self.global_pkt_index += self.exec_phase_offset
+
+        ip_src = self.df_csv.iat[self.global_pkt_index, 1]
+        ip_dst = self.df_csv.iat[self.global_pkt_index, 2]
+        if str(ip_src) == 'nan' or str(ip_dst) == 'nan':
+            self.cur_pkt = []
+            self.global_pkt_index = self.global_pkt_index + 1
+            self.phase_pkt_index = self.phase_pkt_index + 1
+            return
+        timestamp = float(self.df_csv.iat[self.global_pkt_index, 5])
+        mac_src = str(self.df_csv.iat[self.global_pkt_index, 9])
+        pkt_len = self.df_csv.iat[self.global_pkt_index, 7]
+        if isnan(pkt_len):
+            pkt_len = 0
+        ip_proto = self.df_csv.iat[self.global_pkt_index, 6]
+        if int(ip_proto) == 513:
+            self.cur_pkt = []
+            self.global_pkt_index = self.global_pkt_index + 1
+            self.phase_pkt_index = self.phase_pkt_index + 1
+            return
+        if isnan(ip_proto):
+            ip_proto = 0
+        if ip_proto == 17 or ip_proto == 6:
+            port_src = self.df_csv.iat[self.global_pkt_index, 3]
+            port_dst = self.df_csv.iat[self.global_pkt_index, 4]
+        else:
+            port_src = 0
+            port_dst = 0
+        if isnan(port_src) or isnan(port_dst):
+            port_src = 0
+            port_dst = 0
+
+        self.global_pkt_index = self.global_pkt_index + 1
+        self.phase_pkt_index = self.phase_pkt_index + 1
+        self.cur_pkt = [pkt_len, timestamp, mac_src, mac_src, ip_src, ip_dst,
+                        str(int(ip_proto)), str(int(port_src)), str(int(port_dst))]
+
     def process(self, phase):
         # If the packet is not IPv4.
         if self.cur_pkt == []:
             return -1
+
+        if self.five_t:
+            self.cur_pkt = [self.cur_pkt[1]] + self.cur_pkt[3:]
+            self.cur_pkt[2] = int(ipaddress.ip_address(self.cur_pkt[2]))
+            self.cur_pkt[3] = int(ipaddress.ip_address(self.cur_pkt[3]))
+            self.cur_pkt[4] = int(self.cur_pkt[4])
+            self.cur_pkt[5] = int(self.cur_pkt[5])
+            self.cur_pkt[6] = int(self.cur_pkt[6])
+            return self.cur_pkt
 
         # Update the current decay counter value.
         # If we're in the training phase or the sampling rate is 1,
@@ -423,6 +482,9 @@ class FCKitNET:
         # If the packet is not IPv4.
         if self.cur_pkt == []:
             return -1
+
+        if self.five_t:
+            return self.cur_pkt
 
         # Update the current decay counter value.
         # If we're in the training phase or the sampling rate is 1,

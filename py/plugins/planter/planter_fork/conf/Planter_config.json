@@ -1,0 +1,19 @@
+{
+    "directory config": {
+        "data": "/home/docker/datasets/kitsune",
+        "work": "/home/docker/planter"
+    },
+    "model config": {
+        "model": "Autoencoder",
+        "type": "1"
+    },
+    "data config": {
+        "dataset": "kitsune",
+        "number of features": 5
+    },
+    "timer log": {
+        "load data": {
+            "start": 1743624941.740023
+        }
+    }
+}
